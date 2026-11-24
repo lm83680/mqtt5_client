@@ -63,6 +63,9 @@ class MockSocket extends Mock implements Socket {
   }
 
   @override
+  Future<void> get done => Future<void>.value();
+
+  @override
   void destroy();
 
   @override

@@ -253,7 +253,21 @@ class MqttPublishingManager {
     final compMsg = msg as MqttPublishCompleteMessage;
     final publishMessage = publishedMessages.remove(
       compMsg.variableHeader.messageIdentifier,
-    )!;
+    );
+    if (publishMessage == null) return true; // Duplicate/late PUBCOMP.
+    final reason = MqttPublishReasonCodeSupport.mqttPublishReasonCode.asInt(
+      compMsg.reasonCode,
+    );
+    if (reason != null &&
+        reason != 0xff &&
+        MqttReasonCodeUtilities.isError(reason)) {
+      _notifyPublishFail(
+        MqttPublishAckMessage()
+            .withMessageIdentifier(compMsg.messageIdentifier)
+            .withReasonCode(compMsg.reasonCode!),
+      );
+      return false;
+    }
     _notifyPublish(publishMessage);
     return true;
   }
@@ -263,6 +277,21 @@ class MqttPublishingManager {
   bool handlePublishReceived(MqttMessage msg) {
     MqttLogger.log('MqttPublishingManager::handlePublishReceived - entered');
     final recvMsg = msg as MqttPublishReceivedMessage;
+    final reason = MqttPublishReasonCodeSupport.mqttPublishReasonCode.asInt(
+      recvMsg.reasonCode,
+    );
+    if (reason != null &&
+        reason != 0xff &&
+        MqttReasonCodeUtilities.isError(reason)) {
+      if (publishedMessages.remove(recvMsg.messageIdentifier) != null) {
+        _notifyPublishFail(
+          MqttPublishAckMessage()
+              .withMessageIdentifier(recvMsg.messageIdentifier)
+              .withReasonCode(recvMsg.reasonCode!),
+        );
+      }
+      return false;
+    }
     // If we've got a matching message, respond with a "ok release it for processing"
     dynamic relMsg;
     relMsg =
@@ -271,9 +300,7 @@ class MqttPublishingManager {
               .withMessageIdentifier(recvMsg.variableHeader.messageIdentifier)
               .withReasonCode(MqttPublishReasonCode.success)
         : MqttPublishReleaseMessage()
-              .withMessageIdentifier(
-                messageIdentifierDispenser.nextMessageIdentifier,
-              )
+              .withMessageIdentifier(recvMsg.messageIdentifier)
               .withReasonCode(MqttPublishReasonCode.packetIdentifierNotFound);
     _connectionHandler.sendMessage(relMsg);
     return true;

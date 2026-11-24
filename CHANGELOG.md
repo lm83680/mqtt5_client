@@ -1,3 +1,12 @@
+# Unreleased (PetTa reliability fixes)
+- Separate TCP/TLS establishment timeout from configurable CONNACK timeout.
+- Close failed/replaced sockets, retire late dials, and preserve automatic reconnect.
+- Bound TLS negotiation and observe write-side socket errors.
+- Cancel both keepalive timers on shutdown.
+- Report rejected QoS 2 ACKs through publishFail, ignore duplicate PUBCOMP, and
+  retain packet identifiers when replying to unknown PUBREC.
+- Add 17 real TCP/TLS regression tests; all 374 tests pass.
+
 # 4.17.1
 - [PR 197](https://github.com/shamblett/mqtt5_client/pull/197)
 

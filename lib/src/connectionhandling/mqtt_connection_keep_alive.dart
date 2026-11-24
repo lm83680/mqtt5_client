@@ -185,7 +185,8 @@ class MqttConnectionKeepAlive {
 
   /// Stop the keep alive process
   void stop() {
-    pingTimer!.cancel();
+    pingTimer?.cancel();
+    disconnectTimer?.cancel();
   }
 
   /// Handle the disconnect timer timeout

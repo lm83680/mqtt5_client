@@ -582,6 +582,12 @@ class MqttClient {
         disconnectOrigin = MqttDisconnectionOrigin.brokerSolicited;
       }
     }
+    final handler = connectionHandler;
+    if (handler != null) {
+      // Broker DISCONNECT and unsolicited socket loss must release native IO too.
+      handler.connection.onDisconnected = null;
+      handler.connection.disconnect();
+    }
     publishingManager?.published.close();
     publishingManager = null;
     authenticationManager?.authenticated.close();

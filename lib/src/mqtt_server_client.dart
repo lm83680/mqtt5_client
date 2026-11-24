@@ -40,6 +40,10 @@ class MqttServerClient extends MqttClient {
   /// Applicable only to TCP sockets
   List<RawSocketOption> socketOptions = <RawSocketOption>[];
 
+  /// Maximum time to wait for CONNACK, in milliseconds.
+  /// Independent of [socketTimeout]; defaults to 5000 ms.
+  int connectAckTimeout = MqttConstants.defaultConnectionAttemptTimeoutPeriod;
+
   int? _socketTimeout;
 
   /// Socket timeout period.
@@ -99,6 +103,7 @@ class MqttServerClient extends MqttClient {
     connectionHandler = MqttSynchronousServerConnectionHandler(
       clientEventBus,
       maxConnectionAttempts: maxConnectionAttempts,
+      connectAckTimeout: connectAckTimeout,
       socketOptions: socketOptions,
       socketTimeout: socketTimeout != null
           ? Duration(milliseconds: socketTimeout!)

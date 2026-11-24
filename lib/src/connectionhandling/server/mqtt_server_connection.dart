@@ -9,6 +9,52 @@ part of '../../../mqtt5_server_client.dart';
 
 /// The MQTT client server connection base class
 class MqttServerConnection extends MqttConnectionBase {
+  int _dialGeneration = 0;
+
+  @override
+  void disconnect({bool auto = false}) {
+    _dialGeneration++;
+    super.disconnect(auto: auto);
+  }
+
+  /// Owns a native TCP/TLS dial, including results delivered after cancellation.
+  Future<MqttConnectionStatus?> _connectSocket(Future<Socket> dial) async {
+    final generation = ++_dialGeneration;
+    Socket? socket;
+    // A timeout cannot cancel an OS dial. Observe and retire every late result.
+    unawaited(
+      dial.then<void>((connected) {
+        // A reset may report both a read error and an IOSink.done error.
+        unawaited(
+          connected.done.then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {},
+          ),
+        );
+        if (generation != _dialGeneration) connected.destroy();
+      }, onError: (Object error, StackTrace stack) {}),
+    );
+    try {
+      socket = await (socketTimeout == null
+          ? dial
+          : dial.timeout(socketTimeout!));
+      if (generation != _dialGeneration) {
+        throw MqttNoConnectionException('Socket dial cancelled');
+      }
+      _applySocketOptions(socket, socketOptions);
+      client = socket;
+      _startListening();
+      return null;
+    } catch (error) {
+      socket?.destroy();
+      if (generation == _dialGeneration) {
+        _dialGeneration++;
+        onError(error);
+      }
+      rethrow;
+    }
+  }
+
   /// Socket timeout OS error codes.
   static const wsaETimedOut = 10060;
   static const eTimedOut = 110;
@@ -175,17 +221,5 @@ class MqttServerConnection extends MqttConnectionBase {
       }
     }
     return socketOptions.isNotEmpty;
-  }
-
-  // Check for a timeout exception
-  bool _isSocketTimeout(Exception e) {
-    if (e is SocketException) {
-      // There are different timeout codes for Linux and Windows so check for both
-      if (e.osError?.errorCode == wsaETimedOut ||
-          e.osError?.errorCode == eTimedOut) {
-        return true;
-      }
-    }
-    return false;
   }
 }

@@ -35,130 +35,21 @@ class MqttServerSecureConnection extends MqttServerConnection {
     connect(server, port);
   }
 
-  /// Connect
+  /// Connect, with bounded TCP/TLS establishment and late socket cleanup.
   @override
-  Future<MqttConnectionStatus?> connect(String server, int port) {
-    final completer = Completer<MqttConnectionStatus?>();
-    MqttLogger.log('MqttServerSecureConnection::connect - entered');
-    try {
-      SecureSocket.connect(
-            server,
-            port,
-            onBadCertificate: onBadCertificate,
-            context: context,
-            timeout: socketTimeout,
-          )
-          .then((SecureSocket socket) {
-            MqttLogger.log(
-              'MqttServerSecureConnection::connect - securing socket',
-            );
-            // Socket options
-            final applied = _applySocketOptions(socket, socketOptions);
-            if (applied) {
-              MqttLogger.log(
-                'MqttServerSecureConnection::connect - socket options applied',
-              );
-            }
-            client = socket;
-            MqttLogger.log(
-              'MqttServerSecureConnection::connect - start listening',
-            );
-            _startListening();
-            completer.complete();
-          })
-          .catchError((dynamic e) {
-            if (_isSocketTimeout(e)) {
-              final message =
-                  'MqttNormalConnection::connect - The connection to the message broker '
-                  '{$server}:{$port} could not be made, a socket timeout has occurred';
-              MqttLogger.log(message);
-              completer.complete();
-            } else {
-              onError(e);
-              completer.completeError(e);
-            }
-          });
-    } on SocketException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::The connection to the message broker '
-          '{$server}:{$port} could not be made. Error is ${e.toString()}';
-      completer.completeError(e);
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    } on HandshakeException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::Handshake exception to the message broker '
-          '{$server}:{$port}. Error is ${e.toString()}';
-      completer.completeError(e);
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    } on TlsException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::TLS exception raised on secure '
-          'connection. Error is ${e.toString()}';
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    }
-    return completer.future;
-  }
+  Future<MqttConnectionStatus?> connect(String server, int port) =>
+      _connectSocket(
+        SecureSocket.connect(
+          server,
+          port,
+          context: context,
+          onBadCertificate: onBadCertificate,
+          timeout: socketTimeout,
+        ),
+      );
 
-  /// Connect Auto
+  /// Automatic recovery obeys the same socket timeout and ownership rules.
   @override
-  Future<MqttConnectionStatus?> connectAuto(String server, int port) {
-    final completer = Completer<MqttConnectionStatus?>();
-    MqttLogger.log('MqttServerSecureConnection::connectAuto - entered');
-    try {
-      SecureSocket.connect(
-            server,
-            port,
-            onBadCertificate: onBadCertificate,
-            context: context,
-          )
-          .then((SecureSocket socket) {
-            MqttLogger.log(
-              'MqttServerSecureConnection::connectAuto - securing socket',
-            );
-            // Socket options
-            final applied = _applySocketOptions(socket, socketOptions);
-            if (applied) {
-              MqttLogger.log(
-                'MqttServerSecureConnection::connectAuto - socket options applied',
-              );
-            }
-            client = socket;
-            MqttLogger.log(
-              'MqttServerSecureConnection::connectAuto - start listening',
-            );
-            _startListening();
-            completer.complete();
-          })
-          .catchError((dynamic e) {
-            if (_isSocketTimeout(e)) {
-              final message =
-                  'MqttNormalConnection::connectAuto - The connection to the message broker '
-                  '{$server}:{$port} could not be made, a socket timeout has occurred';
-              MqttLogger.log(message);
-              completer.complete();
-            } else {
-              onError(e);
-              completer.completeError(e);
-            }
-          });
-    } on SocketException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::connectAuto - The connection to the message broker '
-          '{$server}:{$port} could not be made. Error is ${e.toString()}';
-      completer.completeError(e);
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    } on HandshakeException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::connectAuto - Handshake exception to the message broker '
-          '{$server}:{$port}. Error is ${e.toString()}';
-      completer.completeError(e);
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    } on TlsException catch (e, stack) {
-      final message =
-          'MqttServerSecureConnection::connectAuto - TLS exception raised on secure '
-          'connection. Error is ${e.toString()}';
-      Error.throwWithStackTrace(MqttNoConnectionException(message), stack);
-    }
-    return completer.future;
-  }
+  Future<MqttConnectionStatus?> connectAuto(String server, int port) =>
+      connect(server, port);
 }

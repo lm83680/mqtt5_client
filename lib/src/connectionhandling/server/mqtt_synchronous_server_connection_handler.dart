@@ -15,6 +15,7 @@ class MqttSynchronousServerConnectionHandler
   MqttSynchronousServerConnectionHandler(
     clientEventBus, {
     required int maxConnectionAttempts,
+    int connectAckTimeout = MqttConstants.defaultConnectionAttemptTimeoutPeriod,
     required socketOptions,
     required socketTimeout,
   }) : super(
@@ -24,14 +25,33 @@ class MqttSynchronousServerConnectionHandler
          socketTimeout: socketTimeout,
        ) {
     this.clientEventBus = clientEventBus;
-    connectTimer = socketTimeout == null
-        ? MqttCancellableAsyncSleep(
-            MqttConstants.defaultConnectionAttemptTimeoutPeriod,
-          )
-        : MqttCancellableAsyncSleep(
-            MqttConstants.disabledConnectionAttemptTimeoutPeriod,
-          );
+    if (connectAckTimeout <= 0) {
+      throw ArgumentError.value(
+        connectAckTimeout,
+        'connectAckTimeout',
+        'Must be positive',
+      );
+    }
+    connectTimer = MqttCancellableAsyncSleep(connectAckTimeout);
     initialiseListeners();
+  }
+
+  bool _cancelled = false;
+
+  void _closeNativeConnection() {
+    connection.onDisconnected = null;
+    connection.disconnect();
+  }
+
+  @override
+  MqttConnectionState disconnect([MqttDisconnectMessage? disconnectMessage]) {
+    _cancelled = true;
+    connectTimer.cancel();
+    try {
+      return super.disconnect(disconnectMessage);
+    } finally {
+      _closeNativeConnection();
+    }
   }
 
   /// Synchronously connect to the specific Mqtt Connection.
@@ -52,6 +72,13 @@ class MqttSynchronousServerConnectionHandler
       );
     }
     do {
+      if (_cancelled) {
+        throw MqttNoConnectionException('Connection attempt cancelled');
+      }
+      // A failed CONNACK must not leave the previous attempt's socket alive.
+      if (connectionAttempts > 0 && !autoReconnectInProgress!) {
+        _closeNativeConnection();
+      }
       // Initiate the connection
       MqttLogger.log(
         'MqttSynchronousServerConnectionHandler::internalConnect - '
@@ -141,6 +168,10 @@ class MqttSynchronousServerConnectionHandler
         'MqttSynchronousServerConnectionHandler::internalConnect - '
         'connection complete',
       );
+      if (_cancelled) {
+        _closeNativeConnection();
+        throw MqttNoConnectionException('Connection attempt cancelled');
+      }
       // Transmit the required connection message to the broker.
       MqttLogger.log(
         'MqttSynchronousServerConnectionHandler::internalConnect '
@@ -187,6 +218,9 @@ class MqttSynchronousServerConnectionHandler
       }
     } while (connectionStatus.state != MqttConnectionState.connected &&
         connectionAttempts < maxConnectionAttempts!);
+    if (connectionStatus.state != MqttConnectionState.connected) {
+      _closeNativeConnection();
+    }
     // If we've failed to handshake with the broker, throw an exception.
     if (connectionStatus.state != MqttConnectionState.connected) {
       if (!autoReconnectInProgress!) {
